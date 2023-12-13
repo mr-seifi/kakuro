@@ -2,7 +2,7 @@ from game import Board, CSPModel
 
 def main():
 
-    board = get_board(4)
+    board = get_board(9)
     board.print_board()
     
     csp = CSPModel(board=board)
