@@ -71,7 +71,7 @@ class Variable:
         return (self.i, self.j)
     
     def __str__(self) -> str:
-        return f"X[{self.i}][{self.j}] = {self.val}"
+        return f"X[{self.i}][{self.j}]"
 
 
 class ConstraintSum:
@@ -80,7 +80,10 @@ class ConstraintSum:
         self.equal = equal
     
     def validate(self, assignment):
-        return sum(map(lambda var: assignment[(var.i, var.j)], self.variables)) == self.equal
+        return sum(map(lambda var: assignment[(var.i, var.j) if type(var) != tuple else var], self.variables)) == self.equal
+    
+    def get_sum(self, assignment):
+        return sum(map(lambda var: assignment[(var.i, var.j)] if (var.i, var.j) in assignment else 0, self.variables))
     
     def __str__(self) -> str:
         summed = " + ".join(list(map(lambda var: f"X[{var.i}][{var.j}]", self.variables)))
@@ -93,7 +96,7 @@ class ConstraintInEquality:
     def validate(self, assignment):
         for i in range(0, len(self.variables)):
             for j in range(i + 1, len(self.variables)):
-                if assignment[(self.variables[i].i, self.variables[i].j)] == assignment[(self.variables[j].i, self.variables[j].j)]:
+                if self.variables[i].val and self.variables[j].val and assignment[(self.variables[i].i, self.variables[i].j)] == assignment[(self.variables[j].i, self.variables[j].j)]:
                     return False
         return True
     
@@ -112,9 +115,11 @@ class CSPModel:
         self.constrains = []
         self.domain = range(1, 10)
         self.neighbors = {}
+        self.variable_to_constraint = {}
         self.create_variables()
         self.create_constraints()
         self.get_neighbors()
+        self.get_variable_to_constraints_mapping()
     
     def create_variables(self):
         for i in range(self.board.width):
@@ -135,9 +140,9 @@ class CSPModel:
                         self.constrains.append(
                             ConstraintSum(variables=deepcopy(vars), equal=left_clue)
                         )
-                        self.constrains.append(
-                            ConstraintInEquality(variables=deepcopy(vars))
-                        )
+                        # self.constrains.append(
+                        #     ConstraintInEquality(variables=deepcopy(vars))
+                        # )
                     vars.clear()
                     left_clue, _ = self.board.get_clue_value(i, j)
                     left_clue = int(left_clue)
@@ -149,9 +154,9 @@ class CSPModel:
                 self.constrains.append(
                     ConstraintSum(variables=deepcopy(vars), equal=left_clue)
                 )
-                self.constrains.append(
-                    ConstraintInEquality(variables=deepcopy(vars))
-                )
+                # self.constrains.append(
+                #     ConstraintInEquality(variables=deepcopy(vars))
+                # )
             vars.clear()
         
         for j in range(self.board.height):
@@ -162,9 +167,9 @@ class CSPModel:
                         self.constrains.append(
                             ConstraintSum(variables=deepcopy(vars), equal=up_clue)
                         )
-                        self.constrains.append(
-                            ConstraintInEquality(variables=deepcopy(vars))
-                        )
+                        # self.constrains.append(
+                        #     ConstraintInEquality(variables=deepcopy(vars))
+                        # )
                     vars.clear()
                     _, up_clue = self.board.get_clue_value(i, j)
                     up_clue = int(up_clue)
@@ -176,40 +181,33 @@ class CSPModel:
                 self.constrains.append(
                     ConstraintSum(variables=deepcopy(vars), equal=up_clue)
                 )
-                self.constrains.append(
-                    ConstraintInEquality(variables=deepcopy(vars))
-                )
+                # self.constrains.append(
+                #     ConstraintInEquality(variables=deepcopy(vars))
+                # )
             vars.clear()
     
     def _get_neighbors(self, i, j):
-        up_i, bottom_i = 0, self.board.width
-        left_j, right_j = 0, self.board.height
-        
         neighbors = []
         for __i in range(i - 1, -1, -1):
             if self.board.get_type(__i, j) == WHITE:
-                up_i = __i
                 neighbors.append((__i, j))
             else:
                 break
         
         for __i in range(i + 1, self.board.width):
             if self.board.get_type(__i, j) == WHITE:
-                bottom_i = __i
                 neighbors.append((__i, j))
             else:
                 break
         
         for __j in range(j - 1, -1, -1):
             if self.board.get_type(i, __j) == WHITE:
-                left_j = __j
                 neighbors.append((i, __j))
             else:
                 break
         
         for __j in range(j + 1, self.board.height):
             if self.board.get_type(i, __j) == WHITE:
-                right_j = __j
                 neighbors.append((i, __j))
             else:
                 break
@@ -222,6 +220,14 @@ class CSPModel:
                 neighbors = self._get_neighbors(i, j)
                 self.neighbors[(i, j)] = neighbors
     
+    def get_variable_to_constraints_mapping(self):
+        for _, variable in self.variables.items():
+            self.variable_to_constraint[(variable.i, variable.j)] = []
+            for constraint in self.constrains:
+                if (variable.i, variable.j) in list(map(lambda var: (var.i, var.j), constraint.variables)):
+                    self.variable_to_constraint[(variable.i, variable.j)].append(constraint)
+    
+
     def get_domain_of_variable(self, assignment, variable):
         legal_domain = set(self.domain)
         for neighbor in self.neighbors[(variable.i, variable.j)]:
@@ -229,169 +235,196 @@ class CSPModel:
                 legal_domain.remove(assignment[(neighbor[0], neighbor[1])])
         return legal_domain
 
-    def check_forward(self, assignment, variable, value, domain):
-        # assignment[(variable.i, variable.j)] = value
-        self._var_assign(assignment, variable, value, domain)
-        for neighbor in self.neighbors[(variable.i, variable.j)]:
-            if len(domain[neighbor[0], neighbor[1]]) == 0:
-                return False
-        # del assignment[(variable.i, variable.j)]
-        self._rm_assign(assignment, variable, value, domain)
-        return True
-
-    def check_consistency(self, assignment, domain):
-        vars = self.get_unassigned_variables(assignment)
-
-        for var in vars:
-            # domain = self.get_domain_of_variable(assignment, var)
-            d = domain[(var.i, var.j)]
-            for val in d:
-                if not self.check_forward(assignment, var, val, domain):
-                    d.remove(val)
-                if not d:
-                    return False
-        return True
-
     def get_unassigned_variable(self, assignment):
         unassigned_vars = [var for key, var in self.variables.items() if (var.i, var.j) not in assignment]
         if not unassigned_vars:
             return None
         return unassigned_vars[0]
     
+    def get_unassigned_variable_mrv(self, assignment, domain):
+        unassigned_vars = [(var, len(domain[key])) for key, var in self.variables.items() if (var.i, var.j) not in assignment]
+        if not unassigned_vars:
+            return None
+        
+        return min(unassigned_vars, key=lambda var: var[1])[0]
+    
+    def order_lcv_values(self, assignment, variable, domain):
+        values = []
+        for value in domain[variable.i, variable.j]:
+            removed = self.assign_var(assignment, variable, value, domain)
+            domain_sum = sum(map(lambda var: len(domain[var]), self.neighbors[(variable.i, variable.j)]))
+            values.append((domain_sum, value))
+            self.del_var(assignment, variable, value, domain, removed)
+        
+        values.sort(reverse=True)
+        domain_of_var = [v[1] for v in values]
+        domain[(variable.i, variable.j)] = set(domain_of_var)
+        return list(domain_of_var)
+
+    
     def get_unassigned_variables(self, assignment):
-        unassigned_vars = [var for key, var in self.variables.items() if (var.i, var.j) not in assignment]
+        unassigned_vars = [var for _, var in self.variables.items() if (var.i, var.j) not in assignment]
         if not unassigned_vars:
             return None
         return unassigned_vars
     
-    def get_unassigned_variable_mrv(self, assignment, domain):
-        unassigned_vars = [var for key, var in self.variables.items() if (var.i, var.j) not in assignment]
-        if not unassigned_vars:
-            return None
-        
-        min_remaining_variable = len(domain[(unassigned_vars[0].i, unassigned_vars[0].j)])
-        selected_var = unassigned_vars[0]
-        for var in unassigned_vars:
-            domain_len = len(domain[var.i, var.j])
-            if domain_len < min_remaining_variable:
-                min_remaining_variable = domain_len
-                selected_var = var
-
-        return selected_var
+    def check_forward(self, domain):
+        for _, d in domain.items():
+            if len(d) == 0:
+                return False
+        return True
+    
+    def check_consistency(self, assignment, domain):
+        unassigned_variables = self.get_unassigned_variables(assignment)
+        for var in unassigned_variables:
+            domain_len = len(domain[(var.i, var.j)])
+            removed_count = 0
+            for val in deepcopy(domain[(var.i, var.j)]):
+                print(assignment, str(var), val, domain[var.i, var.j], domain, ':(')
+                removed = self.assign_var(assignment, var, val, domain)
+                print(assignment, str(var), val, domain[var.i, var.j], domain, ':)')
+                if not self.check_forward(domain):
+                    self.del_var(assignment, var, val, domain, removed)
+                    domain[(var.i, var.j)].remove(val)
+                    removed_count += 1
+                    continue
+                self.del_var(assignment, var, val, domain, removed)
+            if removed_count == domain_len:
+                return False
+        return True
     
     def solve(self, report=True):
         assignment = {}
-        self.cached_domains = {}
+        
+        domains = {(v[0], v[1]): set(range(1, 10)) for v in self.variables}
         start = time()
+
         # SIMPLE Backtrack
-        # self.solution = self.backtrack(assignment)
+        # self.solution = self.backtrack(assignment=assignment, domain=domains)
 
         # MRV + Backtrack
         # self.solution = self.backtrack(assignment, mrv=True)
         
         # MRV + LCV + Backtrack
-        # self.solution = self.backtrack(assignment, mrv=True, lcv=True)
+        self.solution = self.backtrack(assignment, domains, mrv=True, lcv=True)
 
         # MRV + ForwardChecking + Backtrack
-        domains = {(v[0], v[1]): set(range(1, 10)) for v in self.variables}
         # self.solution = self.backtrack(assignment, domain=domains, mrv=True, forward_checking=True)
 
         # MRV + ArcConsistency + Backtrack
-        self.solution = self.backtrack(assignment, domain=domains, mrv=True, arc_consistency=True)
+        # self.solution = self.backtrack(assignment, domain=domains, mrv=True, arc_consistency=True)
         end = time()
 
         if report:
             print(f'TIME-SPAN: {end - start:.4}')
 
         return self.solution
-
-    def _check_assignment(self, assignment):
-        if len(assignment) == len(self.variables):
-            all_ok = True
-            for constraint in self.constrains:
-                if not constraint.validate(assignment):
-                    all_ok = False
-                    break
-            if all_ok:
-                return assignment
-        return None
     
-    def _var_assign(self, assignment, var, val, domains):
-        assignment[(var.i, var.j)] = val
-        for neighbor in self.neighbors[(var.i, var.j)]:
-            if val in domains[(neighbor[0], neighbor[1])]:
-                domains[(neighbor[0], neighbor[1])].remove(val)
     
-    def _rm_assign(self, assignment, var, val, domains):
-        del assignment[(var.i, var.j)]
-        for neighbor in self.neighbors[(var.i, var.j)]:
-            domains[(neighbor[0], neighbor[1])].add(val)
+    def remove_bigger_than_clue_values(self, assignment, variable, domain, leaf=False):
+        removed = []
+        for val in deepcopy(domain[variable]):
+            cnt = 0
+            for constraint in self.variable_to_constraint[variable]:
+                if not leaf:
+                    if val + constraint.get_sum(assignment) > constraint.equal:
+                        if val in domain[variable]:
+                            domain[variable].remove(val)
+                            removed.append(val)
+                else:
+                    if val + constraint.get_sum(assignment) != constraint.equal:
+                        cnt += 1
+                    if cnt == len(self.variable_to_constraint[variable]):
+                        if val in domain[variable]:
+                            domain[variable].remove(val)
+                            removed.append(val)
+        return removed
+    
+    def check_if_it_is_the_last_one(self, assignment, variable):
+        neighbors = self.neighbors[variable]
+        bad = 2
+        for i in range(self.board.width):
+            if i == variable[0]:
+                continue
+            if (i, variable[1]) not in neighbors:
+                continue
+            if (i, variable[1]) not in assignment and (i, variable[1]) != variable:
+                bad -= 1
+                break
         
-        
-    def _lcv_backtrack(self, assignment, mrv=False):
-        res = self._check_assignment(assignment)
-        if res:
-            return res
-        
-        if not mrv:
-            var = self.get_unassigned_variable(assignment)
-        else:
-            var = self.get_unassigned_variable_mrv(assignment)
+        for j in range(self.board.height):
+            if j == variable[1]:
+                continue
+            if (variable[0], j) not in neighbors:
+                continue
+            if (variable[0], j) not in assignment and (variable[0], j) != variable:
+                bad -= 1
+                break
 
-        if not var:
-            return None
-        
-        domain_length = 100000
-        selected_val = list(self.domain)[0]
-        for value in self.domain:
-            assignment[(var.i, var.j)] = value
-            _domain_length = 0
-            for neighbor in self.neighbors[(var.i, var.j)]:
-                _domain_length += len(self.get_domain_of_variable(assignment, Variable(i=neighbor[0], j=neighbor[1])))
-            if _domain_length < domain_length:
-                domain_length = _domain_length
-                selected_val = value
-            del assignment[(var.i, var.j)]
+        return bad != 0
 
-        assignment[(var.i, var.j)] = selected_val
-        result = self._lcv_backtrack(assignment, mrv=mrv)
-        if result is not None:
-            return result
-        del assignment[(var.i, var.j)]
+    def assign_var(self, assignment, variable, value, domain):
+        assignment[(variable.i, variable.j)] = value
+        removed_values_from_domain = {}
 
-        return None
+        for neighbor in self.neighbors[(variable.i, variable.j)]:
+            if neighbor in assignment:
+                continue
+            if value in domain[neighbor]:
+                # print(assignment, str(variable), value)
+                domain[neighbor].remove(value)
+            # print(assignment, variable, neighbor, domain[neighbor], self.check_if_it_is_the_last_one(assignment, neighbor), ':(')
+            if self.check_if_it_is_the_last_one(assignment, neighbor):
+                removed = self.remove_bigger_than_clue_values(assignment, neighbor, domain, leaf=True)
+                # print(assignment, variable, neighbor, domain[neighbor], self.check_if_it_is_the_last_one(assignment, neighbor), ':)')
+            else:
+                removed = self.remove_bigger_than_clue_values(assignment, neighbor, domain)
+            removed_values_from_domain[neighbor] = removed
+        return removed_values_from_domain
 
+    
+    def del_var(self, assignment, variable, value, domain, removed_vals):
+        del assignment[(variable.i, variable.j)]
+        for neighbor in self.neighbors[(variable.i, variable.j)]:
+            domain[neighbor].add(value)
+            if neighbor in removed_vals:
+                for removed_val in removed_vals[neighbor]:
+                    domain[neighbor].add(removed_val)
+    
+    def validate_assignment(self, assignment):
+        for constraint in self.constrains:
+            if not constraint.validate(assignment):
+                return False
+        return True
+    
+    # THE CODE WILL BE FORWARD CHECKED!
     def backtrack(self, assignment, domain, mrv=False, lcv=False, forward_checking=False, arc_consistency=False):
-        if lcv:
-            return self._lcv_backtrack(assignment, mrv=mrv)
+        if len(assignment) == len(self.variables):
+            return assignment
         
-        res = self._check_assignment(assignment)
-        if res:
-            return res
-
-        if not mrv:
-            var = self.get_unassigned_variable(assignment)
-        else:
-            var = self.get_unassigned_variable_mrv(assignment, domain)
-
+        # consistent = self.check_consistency(assignment, domain)
+        # if not consistent:
+        #     del assignment[list(assignment.items())[-1][0]]
+        #     return self.backtrack(assignment, domain, mrv=mrv, lcv=lcv, forward_checking=forward_checking, arc_consistency=arc_consistency)
+        
+        var = self.get_unassigned_variable_mrv(assignment, domain) if mrv else self.get_unassigned_variable(assignment)
         if not var:
             return None
+        
+        var_domain = None
+        if lcv:
+            var_domain = self.order_lcv_values(assignment, var, domain)
 
-        if arc_consistency:
-            ok = self.check_consistency(assignment, domain)
-            if not ok:
-                return None
-
-        for value in domain[(var.i, var.j)]:
-            if forward_checking:
-                if not self.check_forward(assignment, var, value, domain):
-                    continue
-            self._var_assign(assignment, var, value, domain)
+        for value in deepcopy(domain[(var.i, var.j)]) if not lcv else var_domain:
+            removed_vals = self.assign_var(assignment=assignment, variable=var, value=value, domain=domain)
+            if forward_checking and not self.check_forward(domain):
+                self.del_var(assignment=assignment, variable=var, value=value, domain=domain, removed_vals=removed_vals)
+                continue
             result = self.backtrack(assignment, domain=domain, mrv=mrv, lcv=lcv, 
                                     forward_checking=forward_checking, 
                                     arc_consistency=arc_consistency)
             if result is not None:
                 return result
-            self._rm_assign(assignment, var, value, domain)
+            self.del_var(assignment=assignment, variable=var, value=value, domain=domain, removed_vals=removed_vals)
 
         return None
