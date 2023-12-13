@@ -2,12 +2,11 @@ from game import Board, CSPModel
 
 def main():
 
-    board = get_board(9)
+    board = get_board(4)
     board.print_board()
     
     csp = CSPModel(board=board)
-    # [print(str(c)) for c in csp.constrains]
-    print(dict(sorted(csp.solve().items())))
+    print(dict(sorted(csp.solve(mrv=True, lcv=True, forward_checking=False).items())))
 
 
 def get_board(n):

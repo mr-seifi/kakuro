@@ -293,30 +293,16 @@ class CSPModel:
                 return False
         return True
     
-    def solve(self, report=True):
+    def solve(self, report=True, mrv=False, lcv=False, forward_checking=False):
         assignment = {}
         
         domains = {(v[0], v[1]): set(range(1, 10)) for v in self.variables}
         start = time()
-
-        # SIMPLE Backtrack
-        # self.solution = self.backtrack(assignment=assignment, domain=domains)
-
-        # MRV + Backtrack
-        # self.solution = self.backtrack(assignment, mrv=True)
-        
-        # MRV + LCV + Backtrack
-        self.solution = self.backtrack(assignment, domains, mrv=True, lcv=True)
-
-        # MRV + ForwardChecking + Backtrack
-        # self.solution = self.backtrack(assignment, domain=domains, mrv=True, forward_checking=True)
-
-        # MRV + ArcConsistency + Backtrack
-        # self.solution = self.backtrack(assignment, domain=domains, mrv=True, arc_consistency=True)
+        self.solution = self.backtrack(assignment, domains, mrv=False, lcv=lcv, forward_checking=forward_checking)
         end = time()
 
         if report:
-            print(f'TIME-SPAN: {end - start:.4}')
+            print(f'TIME-SPAN: {end - start:.4}s')
 
         return self.solution
     
